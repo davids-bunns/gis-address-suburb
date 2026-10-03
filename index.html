@@ -177,6 +177,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule)
 
   <footer>
     Built for LINZ Data Service exports (<span style="font-family:var(--f-data)">NZ Addresses</span> and <span style="font-family:var(--f-data)">NZ Suburbs and Localities</span>, shapefile format), but any zipped point and polygon shapefiles in the same coordinate system work. Points on a shared boundary are counted once. Large national extracts take tens of seconds.
+    <span id="app-version"></span>
   </footer>
 </div>
 
@@ -660,15 +661,27 @@ self.onmessage = async (e) => {
     try { await navigator.clipboard.writeText(csv()); toast(`Copied ${fmt(data.rows.length)} rows`); }
     catch { toast("Copying is blocked here. Use Save CSV instead."); }
   });
+  // Inside claude.ai the sandbox blocks plain downloads, so use the downloads capability there;
+  // the standalone build (no window.claude) saves through an ordinary blob link.
   let downloads = null;
-  $("export").hidden = true;
-  if (window.claude && window.claude.use) {
+  const inClaude = !!(window.claude && window.claude.use);
+  if (inClaude) {
+    $("export").hidden = true;
     window.claude.use("downloads").then((d) => { downloads = d; $("export").hidden = !d; }).catch(() => {});
   }
   $("export").addEventListener("click", async () => {
+    const blob = new Blob([csv()], { type: "text/csv" });
+    if (!inClaude) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "addresses-per-suburb.csv";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      return;
+    }
     if (!downloads) return;
     try {
-      await downloads.save({ filename: "addresses-per-suburb.csv", data: new Blob([csv()], { type: "text/csv" }) });
+      await downloads.save({ filename: "addresses-per-suburb.csv", data: blob });
       toast("Saved");
     } catch (e) {
       if (e && e.code === "declined") return;

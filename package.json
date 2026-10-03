@@ -1,0 +1,12 @@
+{
+  "name": "suburb-address-count",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser app that counts address points per suburb polygon from zipped shapefiles",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}
