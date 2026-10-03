@@ -81,29 +81,6 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .check { display: flex; gap: 6px; align-items: center; font-size: 14px; color: var(--ink); padding-bottom: 7px; }
 .spacer { flex: 1; }
 
-.prvd { border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); }
-.prvd > summary { cursor: pointer; padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; list-style: none; }
-.prvd > summary::-webkit-details-marker { display: none; }
-.prvd > summary::before { content: "▸"; color: var(--accent); }
-.prvd[open] > summary::before { content: "▾"; }
-.prvd > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.prvd h3 { font: 600 18px/1.1 var(--f-display); letter-spacing: .02em; margin: 0; }
-.prvd .sub { font-size: 13px; color: var(--muted); }
-.prvd-body { padding: 0 14px 14px; display: grid; gap: 12px; }
-.prvd-top { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
-.prvd-list { display: grid; grid-template-columns: minmax(0, 1fr) auto auto 9rem; gap: 0 14px; align-items: center; font-size: 14px; }
-.prvd-list .h { font: 500 11px/1 var(--f-data); letter-spacing: .07em; text-transform: uppercase; color: var(--muted); padding: 6px 0; border-bottom: 1px solid var(--ink); }
-.prvd-list .c { padding: 6px 0; border-bottom: 1px solid var(--rule); min-width: 0; overflow-wrap: anywhere; }
-.prvd-list .n { font: 13px var(--f-data); text-align: right; color: var(--muted); }
-.prvd-list input { font: 500 14px var(--f-data); color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 4px; padding: 5px 7px; width: 100%; }
-.prvd-list input:not(:placeholder-shown) { border-color: var(--accent); }
-.prvd-totals { display: flex; flex-wrap: wrap; gap: 6px 8px; font-size: 13px; color: var(--muted); align-items: center; }
-.chip { font: 500 12px/1 var(--f-data); padding: 5px 8px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); }
-td.prvd-cell { font: 500 13px var(--f-data); color: var(--accent); white-space: nowrap; }
-@media (max-width: 560px) {
-  .prvd-list { grid-template-columns: minmax(0, 1fr) 7rem; }
-  .prvd-list .n, .prvd-list .h.n { display: none; }
-}
 .tablebox { overflow-x: auto; border-bottom: 1px solid var(--rule); }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th { font: 500 11px/1 var(--f-data); letter-spacing: .07em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--ink); white-space: nowrap; }
@@ -167,20 +144,6 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule)
     </div>
     <div class="tiles" id="tiles"></div>
     <div class="notes" id="notes"></div>
-    <details class="prvd" id="prvd" open>
-      <summary><h3>PRVD aliases</h3><span class="sub" id="prvd-summary"></span></summary>
-      <div class="prvd-body">
-        <div class="prvd-top">
-          <span class="sub" style="flex:1 1 280px">Give each territorial authority a PRVD code. It is added to the table and exported as a PRVD column. A suburb spanning several authorities gets each of their codes, separated by semicolons. Codes are remembered in this browser.</span>
-          <label class="field">Territorial authority column
-            <select id="ta-field"></select>
-          </label>
-          <button class="ghost" id="prvd-clear">Clear codes</button>
-        </div>
-        <div class="prvd-list" id="prvd-list"></div>
-        <div class="prvd-totals" id="prvd-totals"></div>
-      </div>
-    </details>
     <div class="controls">
       <label class="field">Find suburb
         <input type="search" id="q" placeholder="Name contains…">
@@ -203,7 +166,6 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule)
           <th>#</th>
           <th><button data-sort="name">Suburb <span class="arrow"></span></button></th>
           <th id="detail-head">Detail</th>
-          <th id="prvd-head">PRVD</th>
           <th class="num"><button data-sort="count">Addresses <span class="arrow"></span></button></th>
           <th>Share of largest</th>
         </tr></thead>
@@ -621,9 +583,7 @@ self.onmessage = async (e) => {
     $("detail-field").innerHTML = `<option value="-1">None</option>` + opts;
     $("name-field").value = pick(d.fields, ["name", "NAME", "name_ascii", "suburb", "locality"], 0);
     $("detail-field").value = pick(d.fields, ["territoria", "major_name", "type"], -1);
-    $("ta-field").innerHTML = `<option value="-1">None</option>` + opts;
-    $("ta-field").value = pick(d.fields, ["territoria", "territor_1", "territorial_authority", "TA_NAME"], -1);
-    renderSummary(); renderPrvd(); renderTable();
+    renderSummary(); renderTable();
   }
 
   function renderSummary() {
@@ -654,11 +614,11 @@ self.onmessage = async (e) => {
     const ni = +$("name-field").value, di = +$("detail-field").value;
     const q = $("q").value.trim().toLowerCase();
     const hide = $("hide-zero").checked;
-    let rows = data.rows.map((r, i) => ({ name: r[ni] || "(unnamed)", detail: di >= 0 ? r[di] : "", prvd: prvdOf(i), n: data.counts[i], i }));
+    let rows = data.rows.map((r, i) => ({ name: r[ni] || "(unnamed)", detail: di >= 0 ? r[di] : "", n: data.counts[i], i }));
     const ranked = [...rows].sort((a, b) => b.n - a.n);
     ranked.forEach((r, k) => (r.rank = k + 1));
     if (hide) rows = rows.filter((r) => r.n > 0);
-    if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.detail.toLowerCase().includes(q) || r.prvd.toLowerCase().includes(q));
+    if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.detail.toLowerCase().includes(q));
     const coll = new Intl.Collator("en-NZ", { sensitivity: "base" });
     rows.sort(sort.key === "count" ? (a, b) => sort.dir * (a.n - b.n) || coll.compare(a.name, b.name) : (a, b) => sort.dir * coll.compare(a.name, b.name));
     return rows;
@@ -670,17 +630,13 @@ self.onmessage = async (e) => {
     const max = Math.max(1, ...data.counts);
     const di = +$("detail-field").value;
     $("detail-head").textContent = di >= 0 ? data.fields[di] : "";
-    const showPrvd = hasAliases();
-    $("prvd-head").hidden = !showPrvd;
-    const pc = (v) => showPrvd ? `<td class="prvd-cell">${esc(v)}</td>` : "";
-    const cols = showPrvd ? 6 : 5;
     document.querySelectorAll("th button").forEach((b) => {
       b.querySelector(".arrow").textContent = b.dataset.sort === sort.key ? (sort.dir < 0 ? "▼" : "▲") : "";
     });
     const shown = rows.slice(0, limit);
-    let html = shown.map((r) => `<tr class="${r.n ? "" : "zero"}"><td class="rank">${r.rank}</td><td class="name">${esc(r.name)}</td><td class="detail">${esc(r.detail)}</td>${pc(r.prvd)}<td class="num">${fmt(r.n)}</td><td class="bar"><i style="width:${(100 * r.n / max).toFixed(2)}%"></i></td></tr>`).join("");
-    if (data.outside && !$("q").value) html += `<tr class="outside"><td class="rank">—</td><td class="name">Outside every suburb</td><td class="detail"></td>${pc("")}<td class="num">${fmt(data.outside)}</td><td class="bar"><i style="width:${Math.min(100, 100 * data.outside / max).toFixed(2)}%"></i></td></tr>`;
-    if (!shown.length) html = `<tr><td colspan="${cols}" class="detail">No suburbs match “${esc($("q").value)}”.</td></tr>`;
+    let html = shown.map((r) => `<tr class="${r.n ? "" : "zero"}"><td class="rank">${r.rank}</td><td class="name">${esc(r.name)}</td><td class="detail">${esc(r.detail)}</td><td class="num">${fmt(r.n)}</td><td class="bar"><i style="width:${(100 * r.n / max).toFixed(2)}%"></i></td></tr>`).join("");
+    if (data.outside && !$("q").value) html += `<tr class="outside"><td class="rank">—</td><td class="name">Outside every suburb</td><td class="detail"></td><td class="num">${fmt(data.outside)}</td><td class="bar"><i style="width:${Math.min(100, 100 * data.outside / max).toFixed(2)}%"></i></td></tr>`;
+    if (!shown.length) html = `<tr><td colspan="5" class="detail">No suburbs match “${esc($("q").value)}”.</td></tr>`;
     $("tbody").innerHTML = html;
     $("more").hidden = rows.length <= limit;
     $("more").textContent = `Show all ${fmt(rows.length)} suburbs`;
@@ -693,81 +649,11 @@ self.onmessage = async (e) => {
     renderTable();
   }));
 
-  // ---------- PRVD aliases (territorial authority -> code) ----------
-  const PRVD_KEY = "suburb-address-count.prvd";
-  let aliases = {};
-  try { aliases = JSON.parse(localStorage.getItem(PRVD_KEY) || "{}") || {}; } catch { aliases = {}; }
-  function saveAliases() { try { localStorage.setItem(PRVD_KEY, JSON.stringify(aliases)); } catch {} }
-  // LINZ lists a suburb that crosses a boundary as "Rangitikei District, Taupo District".
-  function tasOf(i) {
-    const ti = +$("ta-field").value;
-    if (ti < 0) return [];
-    return (data.rows[i][ti] || "").split(/\s*,\s*/).filter(Boolean);
-  }
-  function prvdOf(i) {
-    const codes = [];
-    for (const ta of tasOf(i)) { const c = aliases[ta]; if (c && !codes.includes(c)) codes.push(c); }
-    return codes.join("; ");
-  }
-  function hasAliases() {
-    if (+$("ta-field").value < 0) return false;
-    return data.rows.some((r, i) => prvdOf(i));
-  }
-  function renderPrvd() {
-    const tas = new Map();
-    data.rows.forEach((r, i) => {
-      for (const ta of tasOf(i)) {
-        const t = tas.get(ta) || { suburbs: 0, n: 0 };
-        t.suburbs++; t.n += data.counts[i];
-        tas.set(ta, t);
-      }
-    });
-    const list = [...tas].sort((a, b) => a[0].localeCompare(b[0], "en-NZ"));
-    if (!list.length) {
-      $("prvd-list").innerHTML = `<span class="sub" style="grid-column:1/-1">Choose the column that holds the territorial authority to assign PRVD codes.</span>`;
-    } else {
-      $("prvd-list").innerHTML = `<span class="h">Territorial authority</span><span class="h n">Suburbs</span><span class="h n">Addresses</span><span class="h">PRVD</span>` +
-        list.map(([ta, t], k) => `<span class="c">${esc(ta)}</span><span class="c n">${fmt(t.suburbs)}</span><span class="c n">${fmt(t.n)}</span>` +
-          `<span class="c"><input id="prvd-${k}" data-ta="${esc(ta)}" value="${esc(aliases[ta] || "")}" placeholder="Code" aria-label="PRVD code for ${esc(ta)}" autocomplete="off" spellcheck="false"></span>`).join("");
-    }
-    const assigned = list.filter(([ta]) => aliases[ta]).length;
-    $("prvd-summary").textContent = list.length ? `${assigned} of ${list.length} authorities assigned` : "";
-    renderPrvdTotals();
-  }
-  function renderPrvdTotals() {
-    const totals = new Map();
-    let unassigned = 0;
-    data.rows.forEach((r, i) => {
-      const p = prvdOf(i);
-      if (p) totals.set(p, (totals.get(p) || 0) + data.counts[i]); else unassigned += data.counts[i];
-    });
-    if (!totals.size) { $("prvd-totals").innerHTML = ""; return; }
-    $("prvd-totals").innerHTML = `<span>Addresses by PRVD:</span>` +
-      [...totals].sort((a, b) => b[1] - a[1]).map(([p, n]) => `<span class="chip">${esc(p)} · ${fmt(n)}</span>`).join("") +
-      (unassigned ? `<span>No code: ${fmt(unassigned)}</span>` : "");
-  }
-  $("prvd-list").addEventListener("input", (e) => {
-    const el = e.target;
-    if (!el.dataset || el.dataset.ta === undefined) return;
-    const code = el.value.trim();
-    if (code) aliases[el.dataset.ta] = code; else delete aliases[el.dataset.ta];
-    saveAliases();
-    const list = [...$("prvd-list").querySelectorAll("input")];
-    $("prvd-summary").textContent = `${list.filter((x) => aliases[x.dataset.ta]).length} of ${list.length} authorities assigned`;
-    renderPrvdTotals(); renderTable();
-  });
-  $("ta-field").addEventListener("input", () => { renderPrvd(); renderTable(); });
-  $("prvd-clear").addEventListener("click", () => {
-    const list = [...$("prvd-list").querySelectorAll("input")];
-    for (const x of list) delete aliases[x.dataset.ta];
-    saveAliases(); renderPrvd(); renderTable();
-  });
-
   function csv() {
     const q = (s) => /[",\n]/.test(s) ? `"${String(s).replace(/"/g, '""')}"` : String(s);
     const order = data.counts.map((n, i) => i).sort((a, b) => data.counts[b] - data.counts[a]);
-    const lines = [[...data.fields, "PRVD", "address_count"].map(q).join(",")];
-    for (const i of order) lines.push([...data.rows[i], prvdOf(i), data.counts[i]].map(q).join(","));
+    const lines = [[...data.fields, "address_count"].map(q).join(",")];
+    for (const i of order) lines.push([...data.rows[i], data.counts[i]].map(q).join(","));
     return lines.join("\n") + "\n";
   }
   function toast(msg) { $("toast").textContent = msg; clearTimeout(toast.t); toast.t = setTimeout(() => ($("toast").textContent = ""), 3500); }
