@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: a survey-sheet column — two intake slots, a run strip, then the tally table with inline bars. */
+/* Layout: a survey-sheet column — one intake drop area, a run strip, then the tally table with inline bars. */
 :root {
   --bg: #eef2f0;
   --panel: #f9fbfa;
@@ -39,7 +39,6 @@ h1 { font: 700 clamp(34px, 6vw, 52px)/1 var(--f-display); letter-spacing: .01em;
 .lede { margin: 4px 0 0; color: var(--muted); max-width: 62ch; }
 h2 { font: 600 22px/1.1 var(--f-display); letter-spacing: .02em; margin: 0; }
 
-.slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 .slot { position: relative; display: grid; gap: 6px; padding: 18px; border: 1.5px dashed var(--rule); border-radius: 6px; background: var(--panel); cursor: pointer; transition: border-color .15s, background .15s; min-width: 0; }
 .slot:hover, .slot.drag { border-color: var(--accent); }
 .slot:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -47,8 +46,14 @@ h2 { font: 600 22px/1.1 var(--f-display); letter-spacing: .02em; margin: 0; }
 .slot input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .slot .kind { font: 500 11px/1 var(--f-data); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .slot .label { font: 600 20px/1.15 var(--f-display); }
-.slot .file { font: 13px/1.4 var(--f-data); color: var(--muted); overflow-wrap: anywhere; }
-.slot.filled .file { color: var(--accent); }
+.slot .file { font: 13px/1.4 var(--f-data); color: var(--muted); overflow-wrap: anywhere; display: grid; gap: 2px; }
+.filelist { display: grid; gap: 6px; }
+.filelist:empty { display: none; }
+.fileitem { display: flex; gap: 10px; align-items: center; font: 13px/1.4 var(--f-data); padding: 8px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); min-width: 0; }
+.fileitem .fn { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--ink); }
+.fileitem .fs { color: var(--muted); white-space: nowrap; }
+.fileitem button { padding: 4px 8px; font-size: 13px; }
+.intake { display: grid; gap: 10px; }
 
 .runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 button { font: 600 15px/1 var(--f-body); border-radius: 5px; padding: 11px 18px; cursor: pointer; border: 1.5px solid var(--accent); background: var(--accent); color: var(--bg); }
@@ -109,27 +114,22 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule)
   <header>
     <div class="eyebrow">Shapefile spatial join · NZGD2000</div>
     <h1>Suburb Address Count</h1>
-    <p class="lede">Drop a suburbs-and-localities shapefile zip and an addresses shapefile zip. Every address point is placed inside its suburb polygon and tallied. Files are read in your browser and never uploaded.</p>
+    <p class="lede">Drop a suburbs-and-localities shapefile and an addresses shapefile, as two zips or as one zip holding both folders. Every address point is placed inside its suburb polygon and tallied. Files are read in your browser and never uploaded.</p>
   </header>
 
-  <section class="slots" aria-label="Input files">
-    <label class="slot" id="slot-sub">
-      <input type="file" id="file-sub" accept=".zip,application/zip">
-      <span class="kind">Polygons</span>
-      <span class="label">Suburbs zip</span>
-      <span class="file" id="name-sub">e.g. lds-nz-suburbs-and-localities-SHP.zip</span>
+  <section class="intake" aria-label="Input files">
+    <label class="slot" id="slot">
+      <input type="file" id="file-in" accept=".zip,application/zip" multiple>
+      <span class="kind">Suburb polygons + address points</span>
+      <span class="label">Add zips</span>
+      <span class="file">One zip with nz-addresses/ and nz-suburbs-and-localities/ folders, separate LINZ zips, or several of either. Each zip you add is counted together with the rest.</span>
     </label>
-    <label class="slot" id="slot-addr">
-      <input type="file" id="file-addr" accept=".zip,application/zip">
-      <span class="kind">Points</span>
-      <span class="label">Addresses zip</span>
-      <span class="file" id="name-addr">e.g. lds-nz-addresses-SHP.zip</span>
-    </label>
+    <div class="filelist" id="filelist"></div>
   </section>
 
   <div class="runbar">
     <button id="run" disabled>Count addresses</button>
-    <span class="hint" id="hint">Choose both zips, or drop them anywhere on the page. Order does not matter.</span>
+    <span class="hint" id="hint">You can also drop zips anywhere on the page. Layers must not overlap: each address and suburb is counted once per layer it appears in.</span>
     <div class="progress" id="progress" hidden>
       <div class="track"><div class="fill" id="fill"></div></div>
       <div class="stage" id="stage">Starting</div>
@@ -422,32 +422,42 @@ async function run(files) {
   const scans = [];
   for (const f of files) scans.push(await scan(f));
   const all = scans.flatMap((s) => s.layers);
-  const subL = all.find((l) => POLY.has(l.type));
-  const addrL = all.find((l) => POINT.has(l.type));
+  // Additive: every polygon layer becomes suburbs and every point layer becomes addresses,
+  // whether they arrive as separate zips or as folders inside one zip. Layers are assumed not to overlap.
+  const subLs = all.filter((l) => POLY.has(l.type));
+  const addrLs = all.filter((l) => POINT.has(l.type));
   const describe = (s) => s.layers.length ? s.layers.map((l) => `${l.shp.name} (${TYPE_NAMES[l.type] || "type " + l.type})`).join(", ") : "no .shp file";
-  if (!subL || !addrL) {
+  if (!subLs.length || !addrLs.length) {
     const found = scans.map((s) => `${s.file.name}: ${describe(s)}`).join("; ");
-    throw new Error(`Need one zip with a polygon shapefile (suburbs) and one with a point shapefile (addresses). Found ${found}.`);
+    throw new Error(`Need at least one polygon shapefile (suburbs) and one point shapefile (addresses), in one zip or several. Found ${found}.`);
   }
-  if (!subL.dbf) throw new Error(`${subL.shp.name} has no matching .dbf, so suburb names are unavailable.`);
+  for (const l of subLs) if (!l.dbf) throw new Error(`${l.shp.name} in ${l.file.name} has no matching .dbf, so its suburb names are unavailable.`);
 
-  progress(0.03, "Reading suburb polygons", true);
-  const subShp = await extract(subL.file, subL.shp, (f) => progress(0.03 + f * 0.12, "Unzipping suburb polygons"));
-  const subDbfBytes = await extract(subL.file, subL.dbf);
-  const encoding = cpgToEncoding(await text(subL.file, subL.cpg));
-  const dbf = readDbf(subDbfBytes, encoding);
-  progress(0.16, "Indexing suburb polygons", true);
-  const polys = readPolygons(subShp);
+  // Suburbs: concatenate every polygon layer; attribute columns are the union of their fields.
+  const fields = [], rows = [], polys = [], subInfo = [];
+  const prjs = [];
+  for (let k = 0; k < subLs.length; k++) {
+    const l = subLs[k];
+    const share = 0.18 / subLs.length, base = 0.02 + k * share;
+    const shp = await extract(l.file, l.shp, (f) => progress(base + f * share * 0.8, `Unzipping suburbs · ${l.shp.name}`));
+    const dbf = readDbf(await extract(l.file, l.dbf), cpgToEncoding(await text(l.file, l.cpg)));
+    const map = dbf.fields.map((f) => { let i = fields.indexOf(f.name); if (i < 0) { fields.push(f.name); i = fields.length - 1; } return i; });
+    const ps = readPolygons(shp);
+    if (ps.length !== dbf.rows.length) throw new Error(`${l.shp.name} has ${ps.length} shapes but its .dbf has ${dbf.rows.length} rows.`);
+    for (let r = 0; r < ps.length; r++) {
+      const row = [];
+      dbf.rows[r].forEach((v, f) => (row[map[f]] = v));
+      rows.push(row); polys.push(ps[r]);
+    }
+    subInfo.push({ zip: l.file.name, path: l.shp.name, n: ps.length });
+    prjs.push(await text(l.file, l.prj));
+  }
+  for (const row of rows) for (let f = 0; f < fields.length; f++) if (row[f] === undefined) row[f] = "";
+  progress(0.2, "Indexing suburb polygons", true);
   const grid = buildGrid(polys);
-  const subPrj = await text(subL.file, subL.prj);
-
-  const addrPrj = await text(addrL.file, addrL.prj);
-  const addrShp = await extract(addrL.file, addrL.shp, (f) => progress(0.2 + f * 0.3, `Unzipping addresses (${(addrL.shp.uncomp / 1048576).toFixed(0)} MB)`));
 
   const counts = new Uint32Array(polys.length);
   let total = 0, outside = 0, outsideExtent = 0, nulls = 0;
-  const v = dv(addrShp);
-  const L = addrShp.length;
   const { x0, y0, x1, y1, G, cw, ch, cells } = grid;
   const place = (x, y) => {
     total++;
@@ -460,32 +470,45 @@ async function run(files) {
     }
     outside++;
   };
-  let p = 100;
-  while (p + 12 <= L) {
-    const len = v.getInt32(p + 4, false) * 2;
-    const c = p + 8;
-    const t = v.getInt32(c, true);
-    if (t === 1 || t === 11 || t === 21) place(v.getFloat64(c + 4, true), v.getFloat64(c + 12, true));
-    else if (t === 8 || t === 18 || t === 28) {
-      const n = v.getInt32(c + 36, true);
-      for (let i = 0; i < n; i++) place(v.getFloat64(c + 40 + 16 * i, true), v.getFloat64(c + 48 + 16 * i, true));
-    } else nulls++;
-    p = c + len;
-    if ((total & 0x3fff) === 0) progress(0.5 + 0.5 * (p / L), `Placing addresses · ${total.toLocaleString()} done`);
+
+  // Addresses: one layer at a time so only one large .shp is in memory at once.
+  const addrInfo = [];
+  const bytesAll = addrLs.reduce((a, l) => a + (l.shp.uncomp || 1), 0);
+  let bytesDone = 0;
+  for (const l of addrLs) {
+    const span = 0.8 * (l.shp.uncomp || 1) / bytesAll, base = 0.2 + 0.8 * bytesDone / bytesAll;
+    const label = addrLs.length > 1 ? ` · ${l.shp.name}` : "";
+    const buf = await extract(l.file, l.shp, (f) => progress(base + f * span * 0.4, `Unzipping addresses (${(l.shp.uncomp / 1048576).toFixed(0)} MB)${label}`));
+    const before = total;
+    const v = dv(buf), L = buf.length;
+    let p = 100;
+    while (p + 12 <= L) {
+      const len = v.getInt32(p + 4, false) * 2;
+      const c = p + 8;
+      const t = v.getInt32(c, true);
+      if (t === 1 || t === 11 || t === 21) place(v.getFloat64(c + 4, true), v.getFloat64(c + 12, true));
+      else if (t === 8 || t === 18 || t === 28) {
+        const n = v.getInt32(c + 36, true);
+        for (let i = 0; i < n; i++) place(v.getFloat64(c + 40 + 16 * i, true), v.getFloat64(c + 48 + 16 * i, true));
+      } else nulls++;
+      p = c + len;
+      if ((total & 0x3fff) === 0) progress(base + span * (0.4 + 0.6 * p / L), `Placing addresses · ${total.toLocaleString()} done${label}`);
+    }
+    bytesDone += l.shp.uncomp || 1;
+    addrInfo.push({ zip: l.file.name, path: l.shp.name, n: total - before });
+    prjs.push(await text(l.file, l.prj));
   }
   progress(1, "Done", true);
   const norm = (s) => s.replace(/\s+/g, "");
+  const known = prjs.filter(Boolean).map(norm);
   return {
-    fields: dbf.fields.map((f) => f.name),
-    rows: dbf.rows,
+    fields, rows,
     counts: Array.from(counts),
     nullPolys: polys.filter((x) => !x).length,
     total, outside, outsideExtent, nulls,
-    subName: subL.file.name, addrName: addrL.file.name,
-    subLayer: subL.shp.name, addrLayer: addrL.shp.name,
-    prjMismatch: !!(subPrj && addrPrj && norm(subPrj) !== norm(addrPrj)),
-    prjMissing: !subPrj || !addrPrj,
-    swapped: files[0] === addrL.file,
+    subLayers: subInfo, addrLayers: addrInfo,
+    prjMismatch: known.some((x) => x !== known[0]),
+    prjMissing: known.length < prjs.length,
     ms: Date.now() - t0,
   };
 }
@@ -508,47 +531,49 @@ self.onmessage = async (e) => {
     rows: [["Rangipo","Locality","Taupo District"],["Otukou","Locality","Taupo District"],["Kaimanawa Forest Park","Conservation Land","Rangitikei District, Taupo District"],["Desert Road","Locality","Taupo District"],["Motuoapa","Locality","Taupo District"],["Tongariro National Park","Conservation Land","Ruapehu District, Taupo District"],["Kaweka Forest Park","Conservation Land","Hastings District"],["Ngamahango","Locality","Rangitikei District"],["Taharua","Locality","Taupo District"],["Tangiwai","Locality","Ruapehu District"],["Tūrangi","Suburb","Taupo District"],["Lake Rotoaira","Lake","Taupo District"],["Motuopuhi Island","Island","Taupo District"],["Lake Otamangakau","Lake","Ruapehu District"],["Waiotaka Valley","Suburb","Taupo District"],["Beggs Pool","Lake","Taupo District"],["Waipakihi","Locality","Rangitikei District, Taupo District"],["Waiouru Military Area","Locality","Ruapehu District"]],
     counts: [24,22,6,5,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
     total: 64, outside: 5, outsideExtent: 0, nulls: 0, nullPolys: 0,
-    subName: "lds-nz-suburbs-and-localities-SHP.zip", addrName: "lds-nz-addresses-SHP.zip",
+    subLayers: [{ zip: "lds-nz-suburbs-and-localities-SHP.zip", path: "nz-suburbs-and-localities.shp", n: 18 }],
+    addrLayers: [{ zip: "lds-nz-addresses-SHP.zip", path: "nz-addresses.shp", n: 64 }],
   };
 
-  const files = { sub: null, addr: null };
+  let files = [];
   let data = null, sort = { key: "count", dir: -1 }, limit = 300, worker = null;
 
-  function setFile(kind, f) {
-    files[kind] = f;
-    $("slot-" + kind).classList.toggle("filled", !!f);
-    if (f) $("name-" + kind).textContent = `${f.name} · ${(f.size / 1048576).toFixed(1)} MB`;
-    $("run").disabled = !(files.sub && files.addr) || !!worker;
+  // Zips are additive: each one chosen or dropped joins the list, and every layer in them is counted.
+  function addFiles(list) {
+    const zips = list.filter((f) => /\.zip$/i.test(f.name));
+    const key = (f) => `${f.name}|${f.size}|${f.lastModified}`;
+    let dup = 0;
+    for (const f of zips) { if (files.some((g) => key(g) === key(f))) dup++; else files.push(f); }
+    const skipped = list.length - zips.length;
+    if (skipped || dup) toast([skipped && `Ignored ${skipped} non-zip file${skipped > 1 ? "s" : ""}`, dup && `${dup} already added`].filter(Boolean).join(" · "));
+    renderFiles();
   }
-  $("file-sub").addEventListener("change", (e) => setFile("sub", e.target.files[0]));
-  $("file-addr").addEventListener("change", (e) => setFile("addr", e.target.files[0]));
-
-  for (const kind of ["sub", "addr"]) {
-    const el = $("slot-" + kind);
-    el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("drag"); });
-    el.addEventListener("dragleave", () => el.classList.remove("drag"));
-    el.addEventListener("drop", (e) => {
-      e.preventDefault(); e.stopPropagation(); el.classList.remove("drag");
-      const fs = [...e.dataTransfer.files];
-      if (fs.length >= 2) dropPair(fs); else if (fs[0]) setFile(kind, fs[0]);
-    });
+  function renderFiles() {
+    $("slot").classList.toggle("filled", files.length > 0);
+    $("filelist").innerHTML = files.map((f, i) => `<div class="fileitem"><span class="fn">${esc(f.name)}</span><span class="fs">${(f.size / 1048576).toFixed(1)} MB</span><button class="ghost" data-remove="${i}" aria-label="Remove ${esc(f.name)}">Remove</button></div>`).join("") +
+      (files.length > 1 ? `<button class="ghost" id="clear-files" style="justify-self:start">Clear all</button>` : "");
+    $("run").disabled = !files.length || !!worker;
   }
-  function dropPair(fs) {
-    const looksAddr = (f) => /address/i.test(f.name);
-    const a = fs.find(looksAddr) || fs[1];
-    const s = fs.find((f) => f !== a) || fs[0];
-    setFile("sub", s); setFile("addr", a);
-  }
+  $("filelist").addEventListener("click", (e) => {
+    if (worker) return;
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.id === "clear-files") files = []; else files.splice(+b.dataset.remove, 1);
+    renderFiles();
+  });
+  $("file-in").addEventListener("change", (e) => { addFiles([...e.target.files]); e.target.value = ""; });
+  const slot = $("slot");
+  slot.addEventListener("dragover", (e) => { e.preventDefault(); slot.classList.add("drag"); });
+  slot.addEventListener("dragleave", () => slot.classList.remove("drag"));
   document.addEventListener("dragover", (e) => e.preventDefault());
   document.addEventListener("drop", (e) => {
-    e.preventDefault();
+    e.preventDefault(); slot.classList.remove("drag");
     const fs = [...e.dataTransfer.files];
-    if (fs.length >= 2) dropPair(fs);
-    else if (fs[0]) setFile(!files.sub ? "sub" : "addr", fs[0]);
+    if (fs.length) addFiles(fs);
   });
 
   $("run").addEventListener("click", () => {
-    if (!files.sub || !files.addr || worker) return;
+    if (!files.length || worker) return;
     $("error").hidden = true;
     $("progress").hidden = false; $("hint").hidden = true;
     $("fill").style.width = "0%";
@@ -557,7 +582,7 @@ self.onmessage = async (e) => {
     const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
     worker = new Worker(url);
     URL.revokeObjectURL(url);
-    const finish = () => { worker.terminate(); worker = null; $("run").disabled = !(files.sub && files.addr); };
+    const finish = () => { worker.terminate(); worker = null; $("run").disabled = !files.length; };
     worker.onmessage = (e) => {
       const m = e.data;
       if (m.type === "progress") { $("fill").style.width = (m.p * 100).toFixed(1) + "%"; $("stage").textContent = m.stage; }
@@ -565,7 +590,7 @@ self.onmessage = async (e) => {
       else if (m.type === "error") { finish(); showError(m.message); }
     };
     worker.onerror = (e) => { e.preventDefault(); finish(); showError(e.message || "The browser stopped the job. The files may be too large for this device's memory."); };
-    worker.postMessage({ files: [files.sub, files.addr] });
+    worker.postMessage({ files });
   });
   function showError(msg) {
     $("progress").hidden = true; $("hint").hidden = false;
@@ -599,10 +624,11 @@ self.onmessage = async (e) => {
       ["Suburbs with addresses", `${fmt(withAddr)} <span style="font-size:18px;color:var(--muted)">of ${fmt(d.counts.length)}</span>`, ""],
     ].map(([k, v, c]) => `<div class="tile ${c}"><span class="v">${v}</span><span class="k">${k}</span></div>`).join("");
     const notes = [];
-    notes.push(`${esc(d.addrName)} joined to ${esc(d.subName)}${d.ms ? ` in ${(d.ms / 1000).toFixed(1)} s` : ""}.`);
+    const layerList = (ls, unit) => ls.map((l) => `${esc(l.path)} <span style="opacity:.75">(${esc(l.zip)}, ${fmt(l.n)} ${unit})</span>`).join(" · ");
+    notes.push(`Addresses from ${layerList(d.addrLayers, "points")}.`);
+    notes.push(`Suburbs from ${layerList(d.subLayers, "polygons")}${d.ms ? `. Counted in ${(d.ms / 1000).toFixed(1)} s` : ""}.`);
     if (d.example) notes.push("This is the result for the LINZ sample you shared. Load your own zips above to replace it.");
     if (d.outside) notes.push(`${fmt(d.outside)} addresses (${pct(d.outside, d.total)}) fall outside every suburb polygon${d.outsideExtent ? `, ${fmt(d.outsideExtent)} of them beyond the suburbs layer's extent` : ""}. This is normal when the suburb file covers a smaller area than the address file.`);
-    if (d.swapped) notes.push("The two zips were in the opposite slots; they were matched by geometry type.");
     if (d.prjMismatch) notes.push(`<span class="warnline">The two layers use different coordinate systems (.prj files differ). Counts will be wrong unless both are in the same system, e.g. both NZGD2000 or both NZTM.</span>`);
     if (d.prjMissing && !d.example) notes.push(`<span class="warnline">A .prj file is missing, so the coordinate systems could not be compared.</span>`);
     if (d.nulls) notes.push(`${fmt(d.nulls)} address records had no geometry and were skipped.`);
