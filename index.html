@@ -678,8 +678,12 @@ self.onmessage = async (e) => {
   function csv() {
     const q = (s) => /[",\n]/.test(s) ? `"${String(s).replace(/"/g, '""')}"` : String(s);
     const order = data.counts.map((n, i) => i).sort((a, b) => data.counts[b] - data.counts[a]);
-    const lines = [[...data.fields, "address_count"].map(q).join(",")];
-    for (const i of order) lines.push([...data.rows[i], data.counts[i]].map(q).join(","));
+    // Export columns: suburb name (from the Name column picker), LINZ type and territorial authority.
+    const ni = +$("name-field").value;
+    const ti = pick(data.fields, ["type"], -1), ai = pick(data.fields, ["territoria", "territor_1"], -1);
+    const val = (row, i) => (i >= 0 ? row[i] : "");
+    const lines = [["M_SUBURB", "TYPE", "M_TERRITORY", "M_SUBURB_HH_COUNT"].join(",")];
+    for (const i of order) lines.push([val(data.rows[i], ni), val(data.rows[i], ti), val(data.rows[i], ai), data.counts[i]].map(q).join(","));
     return lines.join("\n") + "\n";
   }
   function toast(msg) { $("toast").textContent = msg; clearTimeout(toast.t); toast.t = setTimeout(() => ($("toast").textContent = ""), 3500); }

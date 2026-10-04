@@ -9,6 +9,6 @@ Inputs are additive. Add one zip holding `nz-addresses/` and `nz-suburbs-and-loc
 
 Everything runs locally in a Web Worker: the zip is read with `File.slice` (only the needed entries are decompressed, Zip64 supported), the `.shp`/`.dbf` are parsed directly, and points are assigned with an even-odd ray cast backed by a grid index over suburbs and a strip index over each polygon's edges. About 2 million points join in a couple of seconds.
 
-Output: per-suburb counts, addresses outside every polygon, a coordinate-system check (`.prj` comparison), and CSV export.
+Output: per-suburb counts, addresses outside every polygon, a coordinate-system check (`.prj` comparison), and CSV export with columns `M_SUBURB`, `TYPE`, `M_TERRITORY`, `M_SUBURB_HH_COUNT`.
 
 Both layers must use the same coordinate system (LINZ defaults to NZGD2000 for both).
